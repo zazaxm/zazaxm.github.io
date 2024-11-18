@@ -1,111 +1,67 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Barcode Scanner</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    
-    <style>
-        /* ... previous styles remain the same ... */
-
-        #error-message {
-            color: red;
-            text-align: center;
-            margin: 20px;
-            padding: 10px;
-            border: 1px solid red;
-            display: none;
-        }
-
-        #start-button {
-            display: block;
-            width: 100%;
-            max-width: 300px;
-            margin: 20px auto;
-            padding: 12px;
-            background-color: #4CAF50;
-            color: white;
-            border: none;
-            border-radius: 5px;
-            font-size: 1rem;
-            cursor: pointer;
-        }
-    </style>
-</head>
-<body>
-    <h1>Barcode Scanner</h1>
-    <div id="error-message"></div>
-    <button id="start-button" onclick="startScanning()">Start Camera</button>
-    <div id="interactive" class="viewport"></div>
-    <table id="scannedCodes">
-        <thead>
-            <tr>
-                <th>Barcode</th>
-                <th>Time Scanned</th>
-            </tr>
-        </thead>
-        <tbody></tbody>
-    </table>
-    <button onclick="exportToExcel()">Export to Excel</button>
-
-    <script>
-        let scannedData = [];
-
-        function showError(message) {
-            const errorDiv = document.getElementById('error-message');
-            errorDiv.style.display = 'block';
-            errorDiv.textContent = message;
-        }
-
-        async function startScanning() {
-            try {
-                // First check if we have camera permission
-                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-                stream.getTracks().forEach(track => track.stop()); // Stop the test stream
-
-                // Initialize Quagga
-                Quagga.init({
-                    inputStream: {
-                        name: "Live",
-                        type: "LiveStream",
-                        target: document.querySelector("#interactive"),
-                        constraints: {
-                            facingMode: "environment",
-                            width: { min: 450 },
-                            height: { min: 300 },
-                            aspectRatio: { min: 1, max: 2 }
-                        },
+<script>
+    async function startScanning() {
+        try {
+            // Check for mobile device
+            const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+            
+            // Request camera permission with appropriate constraints
+            const stream = await navigator.mediaDevices.getUserMedia({ 
+                video: {
+                    facingMode: isMobile ? "environment" : "user",
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 }
+                }
+            });
+            
+            // Initialize Quagga after permission is granted
+            Quagga.init({
+                inputStream: {
+                    name: "Live",
+                    type: "LiveStream",
+                    target: document.querySelector("#interactive"),
+                    constraints: {
+                        facingMode: isMobile ? "environment" : "user",
                     },
-                    decoder: {
-                        readers: ["code_128_reader", "ean_reader", "ean_8_reader", "code_39_reader", "upc_reader"],
-                        debug: {
-                            drawBoundingBox: true,
-                            showFrequency: true,
-                            drawScanline: true,
-                            showPattern: true
-                        }
-                    },
-                    locate: true
-                }, function(err) {
-                    if (err) {
-                        showError("Error initializing scanner: " + err);
-                        return;
-                    }
-                    Quagga.start();
-                    document.getElementById('start-button').style.display = 'none';
-                });
+                },
+                decoder: {
+                    readers: [
+                        "ean_reader",
+                        "ean_8_reader",
+                        "code_128_reader",
+                        "code_39_reader",
+                        "upc_reader"
+                    ]
+                }
+            }, function(err) {
+                if (err) {
+                    console.error(err);
+                    alert("Error initializing scanner: " + err);
+                    return;
+                }
+                console.log("Quagga initialization succeeded");
+                Quagga.start();
+            });
 
-            } catch (error) {
-                showError("Camera access denied. Please allow camera access and try again.");
-                console.error("Camera access error:", error);
-            }
+        } catch (error) {
+            alert("Camera access denied or error occurred. Please ensure camera permissions are granted.");
+            console.error("Error:", error);
         }
+    }
 
-        // Rest of your existing code for Quagga.onDetected and other functions...
+    // Add error handling
+    window.onerror = function(msg, url, lineNo, columnNo, error) {
+        console.error('Error: ' + msg + '\nURL: ' + url + '\nLine: ' + lineNo + '\nColumn: ' + columnNo + '\nError object: ' + JSON.stringify(error));
+        return false;
+    };
+</script>
+<div id="debug-info" style="display:none;">
+    <p>Debug Information:</p>
+    <pre id="debug-text"></pre>
+</div>
 
-        // Add error handling for Quagga
-        Quagga.onProcessed(function(result) {
-            if (result && result.codeResult) {
-                //
+<script>
+    function logDebug(message) {
+        const debugText = document.getElementById('debug-text');
+        debugText.textContent += new Date().toISOString() + ': ' + message + '\n';
+    }
+</script>
