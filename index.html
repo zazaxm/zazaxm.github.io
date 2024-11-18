@@ -4,50 +4,22 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Barcode Scanner</title>
-    <!-- Include required libraries -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     
     <style>
-        body {
-            margin: 0;
-            padding: 15px;
-            font-family: Arial, sans-serif;
-        }
+        /* ... previous styles remain the same ... */
 
-        h1 {
-            font-size: 1.5rem;
+        #error-message {
+            color: red;
             text-align: center;
+            margin: 20px;
+            padding: 10px;
+            border: 1px solid red;
+            display: none;
         }
 
-        #interactive.viewport {
-            width: 100%;
-            max-width: 640px;
-            height: auto;
-            margin: 0 auto;
-        }
-
-        #interactive.viewport > canvas, 
-        #interactive.viewport > video {
-            width: 100%;
-            height: auto;
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 20px;
-            font-size: 0.9rem;
-        }
-
-        th, td {
-            border: 1px solid #ddd;
-            padding: 8px;
-            text-align: left;
-            word-break: break-all;
-        }
-
-        button {
+        #start-button {
             display: block;
             width: 100%;
             max-width: 300px;
@@ -60,29 +32,12 @@
             font-size: 1rem;
             cursor: pointer;
         }
-
-        button:active {
-            background-color: #45a049;
-        }
-
-        @media (max-width: 480px) {
-            body {
-                padding: 10px;
-            }
-
-            th, td {
-                padding: 6px;
-                font-size: 0.8rem;
-            }
-
-            .viewport {
-                height: 300px !important;
-            }
-        }
     </style>
 </head>
 <body>
     <h1>Barcode Scanner</h1>
+    <div id="error-message"></div>
+    <button id="start-button" onclick="startScanning()">Start Camera</button>
     <div id="interactive" class="viewport"></div>
     <table id="scannedCodes">
         <thead>
@@ -98,17 +53,59 @@
     <script>
         let scannedData = [];
 
-        Quagga.init({
-            inputStream: {
-                name: "Live",
-                type: "LiveStream",
-                target: document.querySelector("#interactive"),
-                constraints: {
-                    facingMode: "environment",
-                    width: { min: 450 },
-                    height: { min: 300 },
-                    aspectRatio: { min: 1, max: 2 }
-                },
-            },
-            decoder: {
-                readers: ["code_128_reader", "ean_reader", "
+        function showError(message) {
+            const errorDiv = document.getElementById('error-message');
+            errorDiv.style.display = 'block';
+            errorDiv.textContent = message;
+        }
+
+        async function startScanning() {
+            try {
+                // First check if we have camera permission
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                stream.getTracks().forEach(track => track.stop()); // Stop the test stream
+
+                // Initialize Quagga
+                Quagga.init({
+                    inputStream: {
+                        name: "Live",
+                        type: "LiveStream",
+                        target: document.querySelector("#interactive"),
+                        constraints: {
+                            facingMode: "environment",
+                            width: { min: 450 },
+                            height: { min: 300 },
+                            aspectRatio: { min: 1, max: 2 }
+                        },
+                    },
+                    decoder: {
+                        readers: ["code_128_reader", "ean_reader", "ean_8_reader", "code_39_reader", "upc_reader"],
+                        debug: {
+                            drawBoundingBox: true,
+                            showFrequency: true,
+                            drawScanline: true,
+                            showPattern: true
+                        }
+                    },
+                    locate: true
+                }, function(err) {
+                    if (err) {
+                        showError("Error initializing scanner: " + err);
+                        return;
+                    }
+                    Quagga.start();
+                    document.getElementById('start-button').style.display = 'none';
+                });
+
+            } catch (error) {
+                showError("Camera access denied. Please allow camera access and try again.");
+                console.error("Camera access error:", error);
+            }
+        }
+
+        // Rest of your existing code for Quagga.onDetected and other functions...
+
+        // Add error handling for Quagga
+        Quagga.onProcessed(function(result) {
+            if (result && result.codeResult) {
+                //
