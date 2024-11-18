@@ -1,246 +1,125 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Barcode Scanner</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    
-    <style>
-        body {
-            margin: 0;
-            padding: 15px;
-            font-family: Arial, sans-serif;
-        }
+<!-- Update the video constraints in the startScanning function -->
+<script>
+    async function startScanning() {
+        try {
+            logDebug('Starting scanner...');
+            const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+            logDebug('Device type: ' + (isMobile ? 'Mobile' : 'Desktop'));
 
-        h1 {
-            font-size: 1.5rem;
-            text-align: center;
-        }
+            // Updated video constraints for better mobile support
+            const constraints = {
+                video: {
+                    facingMode: { exact: "environment" }, // Force rear camera on mobile
+                    width: { min: 640, ideal: 1280, max: 1920 },
+                    height: { min: 480, ideal: 720, max: 1080 }
+                }
+            };
 
+            // Fallback if exact "environment" fails
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                logDebug('Camera accessed successfully');
+            } catch (err) {
+                logDebug('Falling back to basic camera access');
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: "environment" }
+                });
+            }
+
+            // Initialize Quagga with updated settings
+            Quagga.init({
+                inputStream: {
+                    name: "Live",
+                    type: "LiveStream",
+                    target: document.querySelector("#interactive"),
+                    constraints: {
+                        facingMode: { exact: "environment" },
+                        aspectRatio: { min: 1, max: 2 },
+                        width: { min: 640, ideal: 1280, max: 1920 },
+                        height: { min: 480, ideal: 720, max: 1080 }
+                    },
+                    area: { // Defines the area of the image to scan
+                        top: "0%",    
+                        right: "0%",  
+                        left: "0%",   
+                        bottom: "0%"  
+                    },
+                },
+                decoder: {
+                    readers: [
+                        "ean_reader",
+                        "ean_8_reader",
+                        "code_128_reader",
+                        "code_39_reader",
+                        "upc_reader"
+                    ],
+                    debug: {
+                        drawBoundingBox: true,
+                        showFrequency: true,
+                        drawScanline: true,
+                        showPattern: true
+                    }
+                },
+                locate: true,
+                numOfWorkers: navigator.hardwareConcurrency || 4,
+            }, function(err) {
+                if (err) {
+                    showError("Scanner initialization failed: " + err);
+                    return;
+                }
+                logDebug('Quagga initialized successfully');
+                Quagga.start();
+                document.getElementById('start-button').style.display = 'none';
+            });
+
+        } catch (error) {
+            showError("Camera access failed: " + error.message);
+        }
+    }
+
+    // Add this new function for handling orientation changes
+    window.addEventListener('orientationchange', function() {
+        if (Quagga.isInitialized()) {
+            Quagga.stop();
+            setTimeout(startScanning, 100); // Restart after orientation change
+        }
+    });
+</script>
+
+<!-- Update the viewport style -->
+<style>
+    #interactive.viewport {
+        width: 100%;
+        max-width: 100%;
+        height: auto;
+        margin: 0 auto;
+        position: relative;
+    }
+
+    #interactive.viewport > canvas, 
+    #interactive.viewport > video {
+        width: 100%;
+        height: auto;
+        max-height: 80vh;
+        object-fit: cover;
+    }
+
+    /* Add mobile-specific styles */
+    @media (max-width: 480px) {
         #interactive.viewport {
-            width: 100%;
-            max-width: 640px;
-            height: auto;
-            margin: 0 auto;
-            background-color: #f0f0f0;
+            height: 60vh;
+            margin-bottom: 20px;
         }
 
         #interactive.viewport > canvas, 
         #interactive.viewport > video {
-            width: 100%;
-            height: auto;
-            max-height: 480px;
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 20px;
-            font-size: 0.9rem;
-        }
-
-        th, td {
-            border: 1px solid #ddd;
-            padding: 8px;
-            text-align: left;
-            word-break: break-all;
+            height: 100%;
+            object-fit: cover;
         }
 
         button {
-            display: block;
-            width: 100%;
-            max-width: 300px;
-            margin: 20px auto;
-            padding: 12px;
-            background-color: #4CAF50;
-            color: white;
-            border: none;
-            border-radius: 5px;
-            font-size: 1rem;
-            cursor: pointer;
+            padding: 15px;
+            font-size: 1.1rem;
         }
-
-        button:active {
-            background-color: #45a049;
-        }
-
-        #error-message {
-            color: red;
-            text-align: center;
-            margin: 20px;
-            padding: 10px;
-            border: 1px solid red;
-            display: none;
-        }
-
-        #debug-info {
-            margin-top: 20px;
-            padding: 10px;
-            background-color: #f8f8f8;
-            border: 1px solid #ddd;
-        }
-
-        @media (max-width: 480px) {
-            body {
-                padding: 10px;
-            }
-
-            th, td {
-                padding: 6px;
-                font-size: 0.8rem;
-            }
-
-            .viewport {
-                height: 300px !important;
-            }
-        }
-    </style>
-</head>
-<body>
-    <h1>Barcode Scanner</h1>
-    <div id="error-message"></div>
-    <button id="start-button" onclick="startScanning()">Start Camera</button>
-    <button onclick="checkCameraSupport()">Check Camera Support</button>
-    <div id="interactive" class="viewport"></div>
-    <table id="scannedCodes">
-        <thead>
-            <tr>
-                <th>Barcode</th>
-                <th>Time Scanned</th>
-            </tr>
-        </thead>
-        <tbody></tbody>
-    </table>
-    <button onclick="exportToExcel()">Export to Excel</button>
-    <div id="debug-info">
-        <p>Debug Information:</p>
-        <pre id="debug-text"></pre>
-    </div>
-
-    <script>
-        let scannedData = [];
-
-        function logDebug(message) {
-            console.log(message);
-            const debugText = document.getElementById('debug-text');
-            debugText.textContent += new Date().toISOString() + ': ' + message + '\n';
-        }
-
-        function showError(message) {
-            const errorDiv = document.getElementById('error-message');
-            errorDiv.style.display = 'block';
-            errorDiv.textContent = message;
-            logDebug('Error: ' + message);
-        }
-
-        async function checkCameraSupport() {
-            try {
-                const devices = await navigator.mediaDevices.enumerateDevices();
-                const cameras = devices.filter(device => device.kind === 'videoinput');
-                logDebug('Available cameras: ' + cameras.length);
-                alert('Available cameras: ' + cameras.length + '\n' + 
-                      cameras.map(camera => camera.label || 'Unnamed camera').join('\n'));
-            } catch (e) {
-                showError('Camera check failed: ' + e.message);
-            }
-        }
-
-        async function startScanning() {
-            try {
-                logDebug('Starting scanner...');
-                const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-                logDebug('Device type: ' + (isMobile ? 'Mobile' : 'Desktop'));
-
-                // Request camera permission
-                const stream = await navigator.mediaDevices.getUserMedia({ 
-                    video: {
-                        facingMode: isMobile ? "environment" : "user",
-                        width: { ideal: 1280 },
-                        height: { ideal: 720 }
-                    }
-                });
-                logDebug('Camera permission granted');
-
-                // Initialize Quagga
-                Quagga.init({
-                    inputStream: {
-                        name: "Live",
-                        type: "LiveStream",
-                        target: document.querySelector("#interactive"),
-                        constraints: {
-                            facingMode: isMobile ? "environment" : "user",
-                        },
-                    },
-                    decoder: {
-                        readers: [
-                            "ean_reader",
-                            "ean_8_reader",
-                            "code_128_reader",
-                            "code_39_reader",
-                            "upc_reader"
-                        ]
-                    },
-                    debug: true
-                }, function(err) {
-                    if (err) {
-                        showError("Scanner initialization failed: " + err);
-                        return;
-                    }
-                    logDebug('Quagga initialized successfully');
-                    Quagga.start();
-                    document.getElementById('start-button').style.display = 'none';
-                });
-
-            } catch (error) {
-                showError("Camera access failed: " + error.message);
-            }
-        }
-
-        Quagga.onDetected(function(result) {
-            let code = result.codeResult.code;
-            let timestamp = new Date().toLocaleString();
-            
-            logDebug('Barcode detected: ' + code);
-            
-            // Add to array
-            scannedData.push({
-                barcode: code,
-                timestamp: timestamp
-            });
-
-            // Update table
-            updateTable(code, timestamp);
-        });
-
-        function updateTable(code, timestamp) {
-            let tbody = document.querySelector("#scannedCodes tbody");
-            let row = tbody.insertRow();
-            row.insertCell(0).textContent = code;
-            row.insertCell(1).textContent = timestamp;
-        }
-
-        function exportToExcel() {
-            let wb = XLSX.utils.book_new();
-            let ws = XLSX.utils.json_to_sheet(scannedData);
-            
-            let today = new Date().toISOString().split('T')[0];
-            let filename = `barcode_scan_${today}.xlsx`;
-
-            XLSX.utils.book_append_sheet(wb, ws, "Scanned Barcodes");
-            XLSX.writeFile(wb, filename);
-            logDebug('Exported to Excel: ' + filename);
-        }
-
-        // Global error handler
-        window.onerror = function(msg, url, lineNo, columnNo, error) {
-            logDebug('Global error: ' + msg);
-            return false;
-        };
-
-        // Log initial load
-        logDebug('Page loaded. User Agent: ' + navigator.userAgent);
-    </script>
-</body>
-</html>
+    }
+</style>
